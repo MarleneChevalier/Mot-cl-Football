@@ -1,0 +1,269 @@
+---
+title: 'Etude : méthodes de traitement des séries temporelles '
+author: "Marlène Chevalier"
+date: "12/01/2020"
+output:
+  html_document:
+    number_sections: 4
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+---
+
+Executive Master Statistique et Big Data  
+enseignant : Jonathan El-Methni (Paris Descartes)
+
+
+<style type="text/css">
+body{ /* Normal  */
+font-size: 12px;
+}
+td {  /* Table  */
+font-size: 12px;
+}
+h1.title {
+font-size: 26px;
+color: Blue;
+}
+
+h1 { /* Header 1 */
+font-size: 20px;
+color: Blue;
+}
+h2 { /* Header 2 */
+font-size: 16px;
+color: Blue;
+}
+h3 { /* Header 3 */
+font-size: 14px;
+font-family: "Times New Roman", Times, serif;
+color: Blue;
+}
+</style>
+
+<style>
+#TOC {
+  color: Blue; 
+}
+
+</style>
+
+
+```{r setup, warning=FALSE, echo=FALSE, include=FALSE}
+
+#packages utilisés
+library(knitr)
+library(forecast)
+library(infer)
+
+```
+
+
+# Sujet : recherche en France du mot-clef "football" sur Google
+L’étude porte sur l'intérêt pour le football dans les recherches sur le Web en France: la série recense pour chaque mois la proportion de recherches dans Google portant sur un mot clé "football" entre le 1er janvier 2004 et le 31 décembre 2019 en France, par rapport à la région où le taux d'utilisation de ce mot clé est le plus élevé (valeur de 100). Ainsi, une valeur de 50 signifie que le mot clé a été utilisé moitié moins souvent en France, et une valeur de 0 signifie que les données pour ce mot clé sont insuffisantes.  
+Les données sont issues du site https://trends.google.fr/   
+
+Il s'agit de donner les caractéristiques de cette série temporelle, d'en étudier la décomposition, d'en donner une modélisation en comparant différents modèles et leurs prévisions.  
+
+**Chargement des données**  
+
+```{r chargt, echo=TRUE} 
+# chargement des données sources : matrice à 192 lignes (années) et 2 colonnes (année et proportion)
+foot = read.csv("multiTimeline_FootFrance.csv",header=T,sep=",") 
+# conversion des données en série temporelle
+d=ts(foot[,2],start=c(2004,1),frequency=12) 
+
+```
+
+# Etude de la série  
+
+## Etude graphique : tendance et saisonnalité
+
+**Graphique de tendance et saisonnalité : plot et monthplot**
+
+```{r graph12, echo=FALSE} 
+#par(mfrow = c(1,2))
+plot(d,xlab="année",ylab="proportion de recherches",sub="Graphe 1 : Tendance",cex.sub=0.9)
+mafoot=ma(d,12,centre=T)
+points(mafoot,col="red",type="l")
+monthplot(d,xlab="mois", ylab="proportion de recherches",sub="Graphe 2 : Saisonnalité",cex.sub=0.9)
+
+```
+
+Entre 2004 et 2008, la tendance de la recherche du mot football sur le Web est en hausse et à partir de 2008 elle décroit régulièrement jusqu'à la fin de la période.
+L'écart des observations à la moyenne mobile (en rouge) semble oscillé autour d'elle de maniere constante.
+
+On constate une saisonnalité plus forte en juin que les autres mois de l'année, ce qui correspond souvent à des temps forts pour l'équipe de France de football (grandes compétitions : participation à la coupe du Monde ou à la coupe d'Europe). La proportion est au maximum (100%) en juin 2006, ce qui correspond à la participation à la coupe du Monde de la France jusqu'en finale.
+
+
+**Graphique de série retardée : lagplot** 
+
+```{r graph3, echo=FALSE} 
+lag.plot(d,lags=12,layout=c(4,3),do.line=TRUE,main="Graphe 3 : Corrélation de la série avec son passé",cex.main=0.9)
+```
+ 
+A partir du diagramme retardé, on peut remarquer une légère autocorrélation  de la série d'ordre 12 (les points se rassemblent davantage autour de la 1ère bissectrice pour lag12) . Cela peut venir du fait que la saisonnalité annuelle est uniquement avérée pour le mois de juin. 
+
+## Décomposition de la série
+
+Il s'agit de mettre en évidence les composantes de la série : tendance / saisonnalité / bruit  
+
+
+**Décomposition automatique**  
+  
+On utilise ici la fonction *decompose ("additive")* (amplitude stable de la série) pour obtenir l'ensemble de la décomposition.  
+
+```{r decompaut, echo=FALSE} 
+decompose_d2=decompose(d,"additive")
+plot(decompose_d2,xlab="année")
+
+
+```
+
+La décomposition confirme les observations graphiques de la série :  
+
+   - tendance croissante puis décroissante à partir de 2010 
+   - saisonnalité d'ordre 12 et d'amplitude stable  
+  
+# Lissage exponentiel et prévision
+
+Il s'agit maintenant d'utiliser la méthode de lissage exponentiel pour faire une prédiction sur un an de la proportion des recherches sur le Web du mot football en France. Pour construire cette prédiction, nous utilisons les données de 2004 à 2018. La dernière année de données (2019) sera utilisée pour comparer la prévision calculée aux données réelles. 
+
+```{r decoup, echo=FALSE} 
+d_0418=window(d,start=2004,end=c(2018,12))
+d_0718=window(d,start=2007,end=c(2018,12))
+d_19=window(d,start=2019)
+
+```
+ 
+Nous avons vu que la série se caractérise par une tendance unique non marquée (croissante, constante puis décroissante), une saisonnalité d'ordre 12, et une erreur constante autour de la moyenne mobile. Dans ce cas, on essaye d'abord le lissage exponentiel ANA qui prend en compte ces caractéristiques.  
+ 
+##Lissage exponentiel ANA
+
+Ce lissage exponentiel prend en compte une tendance non caractéristique,une saisonnalité et une erreur additives.
+
+ 
+```{r lana, echo=FALSE} 
+fit_lana=ets(d_0418,model="ANA")
+summary(fit_lana)
+pred_lana=forecast(fit_lana,h=12)
+plot(pred_lana,xlim=c(2019,2020),main="lissage exponentiel ANA/observations")
+points(d_19,type="l",col='black',lwd=2)
+legend('bottom',c("observations","prédictions"),col=c("black","blue"),lty=rep(1,2),lwd=rep(2,2))
+```
+ 
+
+##Lissage automatique
+
+On sélectionne automatiquement les critères de lissage et on compare avec les prévisions du lissage exponentiel ANA.
+
+
+```{r lauto, echo=FALSE} 
+fit_lauto=ets(d_0418,model="ZZZ")
+summary(fit_lauto)
+pred_lauto=forecast(fit_lauto,h=12)
+plot(pred_lauto,xlim=c(2019,2020),type="l",main="lissage exponentiel MNA/observations")
+points(d_19,type="l",col='black',lwd=2)
+legend('bottom',c("observations","prédictions"),col=c("black","blue"),lty=c(rep(1,3)),lwd=c(rep(2,3)))
+```
+ 
+Le modèle automatique sélectionne un modèle "MNA" : erreur multiplicative, sans tendance particulière et saisonnalité additive.
+
+
+**Comparaison des 2 lissages :**  
+
+Graphiquement, il semble que les 2 prévisions soient  proches et présentent peu d'écarts avec les observations de 2019, sauf aux alentours de mai/juin où le pic observé est sous estimé par les 2 lissages.
+
+Il apparait que le modèle MNA est meilleur selon les critères de qualité : MNA est le modèle de lissage avec meilleur AIC.  
+Mais le modèle ANA donnent des erreurs de prédiction globalement plus faibles (ME, RMSE, MAE, MPE, MAPE, MASE, ACF1).
+  
+
+# Processus stationnaire
+
+Dans un premier temps, il s'agit de tester la stationnarité de la série.
+
+##Corrélogramme de la série 
+
+Traçons les graphiques mettant en évidence l'autocovariance et l'autocorrélation de la série. Il s'agit d'identifier le lien de la série avec son passé (même série à différents instants de retard=lag) . Si ce lien est significativement différent de 0, la série ne sera pas stationnaire. Si le corrélogramme montre une convergence vers 0, on pourra considérer que la série est stationnaire.
+
+```{r statio, echo=FALSE} 
+par(mfrow = c(1,2))
+acf(d,type="covariance",main="Covariance")
+acf(d,type="correlation",main="Correlation")
+```
+
+Ici la corrélation varie mais ne converge pas rapidement vers 0 :  la série  n'est donc pas stationnaire.
+
+##Test de blancheur
+
+Vérifions cette observation par le test du Portemanteau (Box test) :  
+H0 : les coefficients d'autocorrelation sont tous nuls jusqu'à l'ordre k (la serie est un bruit blanc, est donc stationnaire)  
+H1 : il existe au moins un coefficient jusqu'à l'ordre k significativement différent de 0 (la série n'est pas un bruit blanc, on ne peut pas confirmer ou infirmer la stationnarité de la série)
+
+```{r boxtest1, echo=FALSE} 
+Box.test(d,lag=20,type="Box-Pierce")
+```
+
+La p_value du test est ici < 5%, par conséquent on rejette H0. La série qui mesure l'intérêt du mot football sur les moteurs de recherche en France n'est pas un bruit blanc.
+
+## Se ramener à une série stationnaire 
+
+Il s'agit de ramener la série d'origine non stationnaire à une série stationnaire en utilisant l'opérateur différence : on élimine ainsi la tendance et la saisonnalité de la série. Il reste alors que la partie résiduelle de la série. On teste alors la stationnarité des résidus (corrélogramme et test du portemanteau).
+
+
+**analyse du bruit restant**  
+```{r diff, echo=FALSE} 
+#d_bruit=diff(diff(d,lag=12,difference=1),lag=1,difference=1)
+d_bruit=diff(d,lag=12,difference=1)
+par(mfrow = c(1,3))
+acf(d_bruit,main="")
+pacf(d_bruit,main="")
+plot(d_bruit,main="",xlab="année",ylab="bruit restant")
+
+Box.test(d_bruit,lag=20,type="Box-Pierce")
+
+```
+
+Les résidus de la série ne sont pas stationnaires : le graphe des corrélation (ACF) affiche des pics importants, donc ne converge pas franchement vers 0 ; p-value Box Pierce<5%.
+
+Les tentatives de stationnarisation de la série d'origine n'ont pas abouti (autre différenciation et tests de lissage par log ou sqrt non plus).  
+
+Remarque : La série réduite à 2007-2018 (c'est à dire hors pic de 2006-06) n'a pas montré plus de stationnarité.  
+
+Dans l'impossibilité de stationnariser, il n'est pas possible d'utiliser les modèles de type ARMA.  
+
+
+#Modélisation de la série et prévision
+
+##Sélection automatique de modèle et prévision
+
+Voyons ce que donne la sélection automatique de modèle sur cette série : auto.arima
+
+```{r modauto, echo=FALSE} 
+modelauto=auto.arima(d_0418)
+Box.test(modelauto$residuals,lag=20)
+
+```
+
+Le choix de modèle automatique conclut à un modèle SARIMA (1,1,1) (2,0,0)[12]. Dans ce cas, la série des résidus est un bruit blanc (test du portemanteau >5%), elle est donc stationnaire.
+
+
+```{r prevauto, echo=FALSE} 
+pred_sarima=forecast(modelauto,12)
+
+plot(pred_sarima,xlim=c(2019,2020))
+points(d_19,type="l",col='black',lwd=2)
+legend('top',c("observations","prédictions"),col=c("black","blue"),lty=rep(1,2),lwd=rep(2,2))
+
+```
+
+Le modèle SARIMA (1,1,1) (2,0,0)[12] donne une courbe trop lisse par rapport aux prédictions, le pic de mi-2019 n'est pas du tout restitué par cette prédiction.
+
+
+##Conclusion 
+
+Les modèles de lissage apportent de meilleures prédictions. Le modèle ANA est celui qui donnent globalement les erreurs de prédiction les plus faibles.
+
